@@ -58,7 +58,8 @@ main = do
   --Create mvar for the mvar lock
   mvarlock <- newEmptyMVar
   putMVar mvarlock True 
-  
+  commandCheck
+
   threadDelay 1000000000
 
 --Loop check for incoming commands
@@ -68,23 +69,38 @@ commandCheck = do
   if raw == [] then commandCheck
   else do
     let command = splitOn " " raw in
-      if (command!!1 == "R") then showRoutingTable
-      -- else if (command!!1 == "B") then sendMessage command!!2 command!!3
-      -- else if (command!!1 == "C") then makeConnection command!!2
-      -- else if (command!!1 == "D") then closeConnection command!!2
-      else putStrLn "Give valid input"
+      if (command!!0 == "R") 
+        then do 
+          showRoutingTable
+          commandCheck
+        else if (command!!0 == "B") 
+          then do 
+            -- bug commad!!2 = first word message
+            sendMessage (command!!1) (command!!2)
+            commandCheck
+          else if (command!!0 == "C") 
+            then do 
+              makeConnection (command!!1)
+              commandCheck
+            else if (command!!0 == "D") 
+              then do 
+                closeConnection (command!!1)
+                commandCheck
+              else do
+                  putStrLn "Give valid input"
+                  commandCheck
 
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
 sendMessage:: String -> String -> IO()
-sendMessage portnumber message = putStrLn "undefined"
+sendMessage portnumber message = putStrLn ("Sending message: " ++ message ++ " to " ++ portnumber)
 
 makeConnection:: String -> IO()
-makeConnection portnumber = putStrLn "undefined"
+makeConnection portnumber = putStrLn ("Starting connection with" ++ portnumber)
 
 closeConnection:: String -> IO()
-closeConnection portNumber = putStrLn "undefined"
+closeConnection portnumber = putStrLn ("Closing connection with" ++ portnumber)
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
