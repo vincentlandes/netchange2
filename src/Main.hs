@@ -94,13 +94,13 @@ showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
 sendMessage:: String -> String -> IO()
-sendMessage portnumber message = putStrLn ("Sending message: " ++ message ++ " to " ++ portnumber)
+sendMessage portnumber message = putStrLn ("Message for: " ++ portnumber ++ " is relayed to ")
 
 makeConnection:: String -> IO()
-makeConnection portnumber = putStrLn ("Starting connection with" ++ portnumber)
+makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
 
 closeConnection:: String -> IO()
-closeConnection portnumber = putStrLn ("Closing connection with" ++ portnumber)
+closeConnection portnumber = putStrLn ("Disconnected: " ++ portnumber)
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
@@ -147,6 +147,3 @@ lock myfunction mvar = do
   result <- myfunction
   putMVar mvar dummy
   return result
-
-
-
