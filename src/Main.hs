@@ -60,8 +60,6 @@ main = do
   putMVar mvarlock True 
   commandCheck
 
-  threadDelay 1000000000
-
 --Loop check for incoming commands
 commandCheck :: IO()
 commandCheck = do
@@ -86,7 +84,10 @@ commandCheck = do
               then do 
                 closeConnection (command!!1)
                 commandCheck
-              else do
+              else if (command!!0 == "Q")
+                then do
+                  closeNode
+                else do
                   putStrLn "Give valid input"
                   commandCheck
 
@@ -101,6 +102,9 @@ makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
 
 closeConnection:: String -> IO()
 closeConnection portnumber = putStrLn ("Disconnected: " ++ portnumber)
+
+closeNode:: IO()
+closeNode = putStrLn ("Closing Node")
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
