@@ -10,6 +10,7 @@ import Data.IORef
 import System.Environment
 import System.IO
 import Network.Socket
+import Data.List.Split
 
 main :: IO ()
 main = do
@@ -59,6 +60,31 @@ main = do
   putMVar mvarlock True 
   
   threadDelay 1000000000
+
+--Loop check for incoming commands
+commandCheck :: IO()
+commandCheck = do
+  raw <- getLine
+  if raw == [] then commandCheck
+  else do
+    let command = splitOn " " raw in
+      if (command!!1 == "R") then showRoutingTable
+      -- else if (command!!1 == "B") then sendMessage command!!2 command!!3
+      -- else if (command!!1 == "C") then makeConnection command!!2
+      -- else if (command!!1 == "D") then closeConnection command!!2
+      else putStrLn "Give valid input"
+
+showRoutingTable:: IO()
+showRoutingTable = putStrLn "Showing routing table"
+
+sendMessage:: String -> String -> IO()
+sendMessage portnumber message = putStrLn "undefined"
+
+makeConnection:: String -> IO()
+makeConnection portnumber = putStrLn "undefined"
+
+closeConnection:: String -> IO()
+closeConnection portNumber = putStrLn "undefined"
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
