@@ -13,11 +13,8 @@ import Network.Socket
 import Data.List.Split
 
 main :: IO ()
-main = do
-  
-  
-  hSetBuffering stdout NoBuffering 
-
+main = do  
+  hSetBuffering stdout NoBuffering
   -- me :: Int is the port number of this process
   -- neighbours :: [Int] is a list of the port numbers of the initial neighbours
   -- During the execution, connections may be broken or constructed
@@ -25,8 +22,6 @@ main = do
 
   putStrLn $ "I should be listening on port " ++ show me
   putStrLn $ "My initial neighbours are " ++ show neighbours
-
-
 
   -- Listen to the specified port.
   serverSocket <- socket AF_INET Stream 0
@@ -57,8 +52,30 @@ main = do
 
   --Create mvar for the mvar lock
   mvarlock <- newEmptyMVar
-  putMVar mvarlock True 
-  commandCheck
+  putMVar mvarlock True
+  _ <- forkIO $ commandCheck
+  checkForMessages neighbours
+
+checkForMessages:: [Int] -> IO()
+checkForMessages neighbours = case neighbours of
+  [] -> checkForMessages neighbours
+  neighbours -> do 
+    checkForMessage neighbours
+    threadDelay 10000000
+    checkForMessages neighbours
+
+--Loop check for incomming messages
+checkForMessage:: [Int] -> IO()
+checkForMessage [] = putStrLn "I have no neighbours"
+checkForMessage (neighbour:neighbours) = do
+  client <- connectSocket neighbour
+  chandle <- socketToHandle client ReadWriteMode
+  message <- hGetLine chandle
+  if (message /= []) then
+    putStrLn $ "Incomming message: " ++ show message
+  else putStrLn "No incomming message"
+  hClose chandle
+  checkForMessage neighbours
 
 --Loop check for incoming commands
 commandCheck :: IO()
@@ -72,9 +89,8 @@ commandCheck = do
           showRoutingTable
           commandCheck
         else if (x == "B") 
-          then do 
-            -- bug commad!!2 = first word message
-            sendMessage (y) (compileMessage xs)
+          then do
+            sendMessage (read y :: Int) (compileMessage xs)
             commandCheck
           else if (x == "C") 
             then do 
@@ -98,10 +114,13 @@ compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
-sendMessage:: String -> String -> IO()
+sendMessage:: Int -> String -> IO()
 sendMessage portnumber message = do 
-  putStrLn ("Message for: " ++ portnumber ++ " is relayed to ")
+  putStrLn ("Message for: " ++ show portnumber ++ " is relayed to ")
   putStrLn ("The message is: " ++ message)
+  client <- connectSocket portnumber 
+  chandle <- socketToHandle client ReadWriteMode
+  hPutStrLn chandle message
 
 makeConnection:: String -> IO()
 makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
@@ -120,14 +139,14 @@ readCommandLineArguments = do
     (me:neighbours) -> return (read me, map read neighbours)
 
 portToAddress :: Int -> SockAddr
-portToAddress portNumber = SockAddrInet (fromIntegral portNumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
+portToAddress portnumber = SockAddrInet (fromIntegral portnumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
 
 connectSocket :: Int -> IO Socket
-connectSocket portNumber = connect'
+connectSocket portnumber = connect'
   where
     connect' = do
       client <- socket AF_INET Stream 0
-      result <- try $ connect client $ portToAddress portNumber
+      result <- try $ connect client $ portToAddress portnumber
       case result :: Either IOException () of
         Left _ -> do
           threadDelay 1000000
