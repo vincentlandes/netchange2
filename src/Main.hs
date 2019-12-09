@@ -28,32 +28,38 @@ main = do
   setSocketOption serverSocket ReuseAddr 1
   bind serverSocket $ portToAddress me
   listen serverSocket 1024
+  
   -- Let a seperate thread listen for incomming connections
   _ <- forkIO $ listenForConnections serverSocket
 
   -- As an example, connect to the first neighbour. This just
   -- serves as an example on using the network functions in Haskell
-  case neighbours of
-    [] -> putStrLn "I have no neighbours :("
-    neighbour : _ -> do
-      putStrLn $ "Connecting to neighbour " ++ show neighbour ++ "..."
-      client <- connectSocket neighbour --Maak een nieuwe Socket voor deze neighbour
-      chandle <- socketToHandle client ReadWriteMode --Creeër een handle voor deze socket
-      -- Send a message over the socket
-      -- You can send and receive messages with a similar API as reading and writing to the console.
-      -- Use `hPutStrLn chandle` instead of `putStrLn`,
-      -- and `hGetLine  chandle` instead of `getLine`.
-      -- You can close a connection with `hClose chandle`.
-      hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my first neighbour."
-      putStrLn "I sent a message to the neighbour"
-      message <- hGetLine chandle
-      putStrLn $ "Neighbour send a message back: " ++ show message
-      hClose chandle
+  -- case neighbours of
+  --   [] -> putStrLn "I have no neighbours :("
+  --   neighbour : _ -> do
+  --     putStrLn $ "Connecting to neighbour " ++ show neighbour ++ "..."
+  --     client <- connectSocket neighbour --Maak een nieuwe Socket voor deze neighbour
+  --     chandle <- socketToHandle client ReadWriteMode --Creeër een handle voor deze socket
+  --     -- Send a message over the socket
+  --     -- You can send and receive messages with a similar API as reading and writing to the console.
+  --     -- Use `hPutStrLn chandle` instead of `putStrLn`,
+  --     -- and `hGetLine  chandle` instead of `getLine`.
+  --     -- You can close a connection with `hClose chandle`.
+  --     hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my first neighbour."
+  --     putStrLn "I sent a message to the neighbour"
+  --     message <- hGetLine chandle
+  --     putStrLn $ "Neighbour send a message back: " ++ show message
+  --     hClose chandle
 
-  --Create mvar for the mvar lock
+  -- Create mvar for the mvar lock
   mvarlock <- newEmptyMVar
   putMVar mvarlock True
+
+  -- Make threads for commands
   _ <- forkIO $ commandCheck
+  threadDelay 5000000
+
+  -- Check for incomming messages
   checkForMessages neighbours
 
 checkForMessages:: [Int] -> IO()
