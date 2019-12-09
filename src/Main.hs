@@ -66,36 +66,42 @@ commandCheck = do
   raw <- getLine
   if raw == [] then commandCheck
   else do
-    let command = splitOn " " raw in
-      if (command!!0 == "R") 
+    let (x:y:xs) = splitOn " " raw in
+      if (x == "R") 
         then do 
           showRoutingTable
           commandCheck
-        else if (command!!0 == "B") 
+        else if (x == "B") 
           then do 
             -- bug commad!!2 = first word message
-            sendMessage (command!!1) (command!!2)
+            sendMessage (y) (compileMessage xs)
             commandCheck
-          else if (command!!0 == "C") 
+          else if (x == "C") 
             then do 
-              makeConnection (command!!1)
+              makeConnection (y)
               commandCheck
-            else if (command!!0 == "D") 
+            else if (x == "D") 
               then do 
-                closeConnection (command!!1)
+                closeConnection (y)
                 commandCheck
-              else if (command!!0 == "Q")
+              else if (x == "Q")
                 then do
                   closeNode
                 else do
                   putStrLn "Give valid input"
                   commandCheck
 
+compileMessage:: [String] -> String
+compileMessage [] = ""
+compileMessage (x:xs) = x ++ " " ++ compileMessage xs
+
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
 sendMessage:: String -> String -> IO()
-sendMessage portnumber message = putStrLn ("Message for: " ++ portnumber ++ " is relayed to ")
+sendMessage portnumber message = do 
+  putStrLn ("Message for: " ++ portnumber ++ " is relayed to ")
+  putStrLn ("The message is: " ++ message)
 
 makeConnection:: String -> IO()
 makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
