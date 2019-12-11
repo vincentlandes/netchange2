@@ -4,6 +4,7 @@ module Main where
 import Control.Monad
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.Concurrent.STM.TVar
 import Control.Concurrent.MVar
 import Control.Exception
 import Data.IORef
@@ -12,6 +13,7 @@ import System.IO
 import Network.Socket
 import Data.List.Split
 import Data.HashMap.Lazy as Hash
+import RoutingTable
 
 main :: IO ()
 main = do  
@@ -37,8 +39,9 @@ main = do
   mvarlock <- newEmptyMVar
   putMVar mvarlock True
 
-  -- Create HashTable for connections
-  connections <- newIORef empty 
+  -- Create HashTable for connections and routingTable
+  connections <- newIORef empty
+  routingTable <- newIORef empty
 
   -- Start creating connections with every neighbour
   initialConnections me neighbours connections
