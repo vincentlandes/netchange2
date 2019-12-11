@@ -32,37 +32,44 @@ main = do
   -- Let a seperate thread listen for incomming connections
   _ <- forkIO $ listenForConnections serverSocket
 
-  --This function recursively goes over the neighbours list and
-  initialConnections :: [Int] -> IO()
-  initialConnections [] = nothing
-  initialConnections (x:rest) = if me > x then 
-    fork $ initialBroadcast x 
-  else initialConnections rest
+  -- Create mvar for the mvar lock
+  mvarlock <- newEmptyMVar
+  putMVar mvarlock True
+  -- Start creating connections with every neighbour
+  initialConnections me neighbours
   
+  -- The main thread checks for commands
+  commandCheck
 
 
 
-  -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-  createHandle :: Int -> ThreadIO ()
-  createHandle portnumber = 
-    do
-      client <- connectSocket portnumber
-      chandle <- socketToHandle portnumber
-      fork  $ initialBroadcast chandle 
-      --Hieronder even een testbericht afdrukken
-      
-  intialBroadcast :: Handle -> IO
-  intialBroadcast handle = do
-    --broadcast all je info hier
-    connectionHandler handle
-  
-  --This function is ran in a seperate thread, and handles a single connection given a handle.
-  connectionHandler :: Handle -> IO() 
-  connectionHandler handle = do
+--This function recursively goes over the neighbours list and
+initialConnections :: Int -> [Int] -> IO()
+initialConnections _ [] = putStrLn "//I have no more neighbours to connect with" 
+initialConnections myport (x:rest) = if myport > x then 
+  createHandle x 
+else initialConnections myport rest
+
+-- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
+createHandle :: Int -> IO()
+createHandle portnumber = do
+    client <- connectSocket portnumber
+    chandle <- socketToHandle client ReadWriteMode
+    _ <- forkIO  $ initialBroadcast chandle
+    putStrLn ("//Connection made with" ++ show portnumber) 
+    
+-- This function will let the new thread broadcast it's information to his neighbours
+initialBroadcast :: Handle -> IO()
+initialBroadcast handle = do
+  --broadcast all je info hier
+  connectionHandler handle
+
+-- This handles a single connection
+connectionHandler :: Handle -> IO() 
+connectionHandler handle = do
   input <- hGetLine handle
-
-    --hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my neighbour."
-    connectionHandler handle
+  putStrLn $ show input
+  connectionHandler handle
 
 
 {--
@@ -104,38 +111,6 @@ In de socket thread checkmessages doen.
   --     putStrLn $ "Neighbour send a message back: " ++ show message
   --     hClose chandle
 
-  -- Create mvar for the mvar lock
-  mvarlock <- newEmptyMVar
-  putMVar mvarlock True
-
-  -- Make threads for commands
-  _ <- forkIO $ commandCheck
-  threadDelay 5000000
-
-  -- Check for incomming messages
-  checkForMessages neighbours
-
-checkForMessages:: [Int] -> IO()
-checkForMessages neighbours = case neighbours of
-  [] -> checkForMessages neighbours
-  neighbours -> do 
-    checkForMessage neighbours
-    threadDelay 10000000
-    checkForMessages neighbours
-
---Loop check for incomming messages
-checkForMessage:: [Int] -> IO()
-checkForMessage [] = putStrLn "I have no neighbours"
-checkForMessage (neighbour:neighbours) = do
-  client <- connectSocket neighbour
-  chandle <- socketToHandle client ReadWriteMode
-  message <- hGetLine chandle
-  if (message /= []) then
-    putStrLn $ "Incomming message: " ++ show message
-  else putStrLn "No incomming message"
-  hClose chandle
-  checkForMessage neighbours
-
 --Loop check for incoming commands
 commandCheck :: IO()
 commandCheck = do
@@ -153,7 +128,8 @@ commandCheck = do
             commandCheck
           else if (x == "C") 
             then do 
-              makeConnection (y)
+              
+              --makeConnection (y)
               commandCheck
             else if (x == "D") 
               then do 
@@ -217,21 +193,21 @@ connectSocket portnumber = connect'
 listenForConnections :: Socket -> IO ()
 listenForConnections serverSocket = do
   (connection, _) <- accept serverSocket
-  _ <- forkIO $ handleConnection connection
+  chandle <- socketToHandle connection ReadWriteMode
+  forkIO $ initialBroadcast chandle
   listenForConnections serverSocket
 
 --if listenForConnections detects an incoming connection, calls this function (in a new thread) to handle that connection.
-handleConnection :: Socket -> IO ()
-handleConnection connection = do
-  putStrLn "Got new incomming connection"
-  chandle <- socketToHandle connection ReadWriteMode
-  hPutStrLn chandle "Welcome"
-  message <- hGetLine chandle
-  putStrLn $ "Incomming connection send a message: " ++ message
-  hClose chandle
+-- handleConnection :: Socket -> IO ()
+-- handleConnection connection = do
+--   putStrLn "Got new incomming connection"
+--   chandle <- socketToHandle connection ReadWriteMode
+--   hPutStrLn chandle "Welcome"
+--   message <- hGetLine chandle
+--   putStrLn $ "Incomming connection send a message: " ++ message
+--   hClose chandle
 
 --An MVar-lock to access the routing table
-
 lock :: IO a -> MVar(Bool) -> IO a
 lock myfunction mvar = do
   dummy <- takeMVar mvar
