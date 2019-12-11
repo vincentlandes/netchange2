@@ -80,7 +80,7 @@ In de socket thread checkmessages doen.
   --     putStrLn $ "Neighbour send a message back: " ++ show message
   --     hClose chandle
 
---This function recursively goes over the neighbours list and
+-- This function recursively goes over the neighbours list and
 initialConnections :: Int -> [Int] -> IO()
 initialConnections _ [] = putStrLn "//I have no more neighbours to connect with" 
 initialConnections myport (x:rest) = if myport > x then 
@@ -108,7 +108,7 @@ connectionHandler handle = do
   putStrLn $ show input
   connectionHandler handle
 
---Loop check for incoming commands
+-- Loop check for incoming commands
 commandCheck :: IO()
 commandCheck = do
   raw <- getLine
@@ -121,30 +121,29 @@ commandCheck = do
           commandCheck
         else if (x == "B") 
           then do
-            sendMessage (read y :: Int) (compileMessage xs)
+            --sendMessage (read y :: Int) (compileMessage xs)
             commandCheck
           else if (x == "C") 
             then do              
               createHandle (read y :: Int)
               commandCheck
             else if (x == "D") 
-              then do 
-                closeConnection (y)
+              then do
                 commandCheck
-              else if (x == "Q")
-                then do
-                  closeNode
-                else do
-                  putStrLn "Give valid input"
-                  commandCheck
+              else do
+                putStrLn "Give valid input"
+                commandCheck
 
+-- Compiling the list of words into a single message
 compileMessage:: [String] -> String
 compileMessage [] = ""
 compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 
+-- Printing the routing table to the console
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
+-- Sending a message to a certain neighbour
 sendMessage:: Handle -> String -> IO()
 sendMessage handle message = hPutStrLn handle message
 
