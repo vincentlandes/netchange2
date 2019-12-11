@@ -32,6 +32,59 @@ main = do
   -- Let a seperate thread listen for incomming connections
   _ <- forkIO $ listenForConnections serverSocket
 
+  --This function recursively goes over the neighbours list and
+  initialConnections :: [Int] -> IO()
+  initialConnections [] = nothing
+  initialConnections (x:rest) = if me > x then 
+    fork $ initialBroadcast x 
+  else initialConnections rest
+  
+
+
+
+  -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
+  createHandle :: Int -> ThreadIO ()
+  createHandle portnumber = 
+    do
+      client <- connectSocket portnumber
+      chandle <- socketToHandle portnumber
+      fork  $ initialBroadcast chandle 
+      --Hieronder even een testbericht afdrukken
+      
+  intialBroadcast :: Handle -> IO
+  intialBroadcast handle = do
+    --broadcast all je info hier
+    connectionHandler handle
+  
+  --This function is ran in a seperate thread, and handles a single connection given a handle.
+  connectionHandler :: Handle -> IO() 
+  connectionHandler handle = do
+  input <- hGetLine handle
+
+    --hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my neighbour."
+    connectionHandler handle
+
+
+{--
+NIEUW STAPPENPLAN VOOR INITIELE CONNECTIES:  
+1. Maak een functie die gewoon checkt of WIJ of de BUREN de connectie moeten opstellen (if me > x then...)
+2. Als me > x, dan creeëren we de socket en daarna de handle.
+3. We roepen een functie aan met de handle als argument IN EEN NIEUWE THREAD. We forken dus deze functie.
+4.  (FUNCTIE A): Deze functie (die dus de handle heeft als argument en op een andere thread draait) handelt de connectie (modify handleConnection)
+
+STAPPENPLAN COMMAND C:
+1. Als we C binnenkrijgen, maak dan de socket en handle aan, en fork FUNCTIE A. (zie boven)
+
+--VERSCHILLENDE THREADS PER NODE:
+1. Thread voor het luisteren naar inkomende connecties.
+2. Thread voor elke socket: deze socket checkt ZELF (in een loop) voor inkomende berichten.
+3. Main thread: luistert naar commands
+
+EXTRA NOTES:
+NIET in de main thread checkformessages doen.
+In de socket thread checkmessages doen.
+
+--}
   -- As an example, connect to the first neighbour. This just
   -- serves as an example on using the network functions in Haskell
   -- case neighbours of
@@ -147,6 +200,7 @@ readCommandLineArguments = do
 portToAddress :: Int -> SockAddr
 portToAddress portnumber = SockAddrInet (fromIntegral portnumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
 
+--Maak een socket voor het gegeven portnummer.
 connectSocket :: Int -> IO Socket
 connectSocket portnumber = connect'
   where
@@ -159,12 +213,14 @@ connectSocket portnumber = connect'
           connect'
         Right _ -> return client
 
+--A fuction which listens for incoming connections (loops)
 listenForConnections :: Socket -> IO ()
 listenForConnections serverSocket = do
   (connection, _) <- accept serverSocket
   _ <- forkIO $ handleConnection connection
   listenForConnections serverSocket
 
+--if listenForConnections detects an incoming connection, calls this function (in a new thread) to handle that connection.
 handleConnection :: Socket -> IO ()
 handleConnection connection = do
   putStrLn "Got new incomming connection"
