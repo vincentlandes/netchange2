@@ -56,7 +56,7 @@ createHandle portnumber = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
     _ <- forkIO  $ initialBroadcast chandle
-    putStrLn ("//Connection made with" ++ show portnumber) 
+    putStrLn $ "//Connection made with: " ++ show portnumber
     
 -- This function will let the new thread broadcast it's information to his neighbours
 initialBroadcast :: Handle -> IO()
@@ -127,9 +127,8 @@ commandCheck = do
             sendMessage (read y :: Int) (compileMessage xs)
             commandCheck
           else if (x == "C") 
-            then do 
-              
-              --makeConnection (y)
+            then do              
+              createHandle (read y :: Int)
               commandCheck
             else if (x == "D") 
               then do 
@@ -149,13 +148,8 @@ compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
-sendMessage:: Int -> String -> IO()
-sendMessage portnumber message = do 
-  putStrLn ("Message for: " ++ show portnumber ++ " is relayed to ")
-  putStrLn ("The message is: " ++ message)
-  client <- connectSocket portnumber 
-  chandle <- socketToHandle client ReadWriteMode
-  hPutStrLn chandle message
+sendMessage:: Handle -> String -> IO()
+sendMessage handle message = hPutStrLn handle message
 
 makeConnection:: String -> IO()
 makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
@@ -192,9 +186,10 @@ connectSocket portnumber = connect'
 --A fuction which listens for incoming connections (loops)
 listenForConnections :: Socket -> IO ()
 listenForConnections serverSocket = do
-  (connection, _) <- accept serverSocket
+  (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
   forkIO $ initialBroadcast chandle
+  putStrLn $ "Received connection with: " ++ show serverSocket
   listenForConnections serverSocket
 
 --if listenForConnections detects an incoming connection, calls this function (in a new thread) to handle that connection.
