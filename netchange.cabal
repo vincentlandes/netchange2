@@ -40,4 +40,5 @@ executable netchange
     , stm
     , network
     , split
+    , unordered-containers
 

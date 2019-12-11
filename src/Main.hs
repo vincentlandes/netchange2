@@ -11,6 +11,7 @@ import System.Environment
 import System.IO
 import Network.Socket
 import Data.List.Split
+import Data.HashMap.Lazy as Hash
 
 main :: IO ()
 main = do  
@@ -35,11 +36,15 @@ main = do
   -- Create mvar for the mvar lock
   mvarlock <- newEmptyMVar
   putMVar mvarlock True
+
+  -- Create HashTable for connections
+  connections <- newIORef empty 
+
   -- Start creating connections with every neighbour
-  initialConnections me neighbours
+  initialConnections me neighbours connections
   
   -- The main thread checks for commands
-  commandCheck
+  commandCheck connections
 
 {--
 NIEUW STAPPENPLAN VOOR INITIELE CONNECTIES:  
@@ -81,17 +86,19 @@ In de socket thread checkmessages doen.
   --     hClose chandle
 
 -- This function recursively goes over the neighbours list and
-initialConnections :: Int -> [Int] -> IO()
-initialConnections _ [] = putStrLn "//I have no more neighbours to connect with" 
-initialConnections myport (x:rest) = if myport > x then 
-  createHandle x 
-else initialConnections myport rest
+initialConnections :: Int -> [Int] -> (IORef (HashMap Int Handle)) -> IO()
+initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
+initialConnections myport (x:rest) connections = if myport > x then 
+  createHandle x connections
+else initialConnections myport rest connections
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> IO()
-createHandle portnumber = do
+createHandle :: Int -> (IORef (HashMap Int Handle)) -> IO()
+createHandle portnumber connections = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
+    _connections <- readIORef connections
+    writeIORef connections (insert portnumber chandle _connections)
     _ <- forkIO  $ initialBroadcast chandle
     putStrLn $ "//Connection made with: " ++ show portnumber
     
@@ -109,30 +116,30 @@ connectionHandler handle = do
   connectionHandler handle
 
 -- Loop check for incoming commands
-commandCheck :: IO()
-commandCheck = do
+commandCheck :: (IORef (HashMap Int Handle)) -> IO()
+commandCheck connections = do
   raw <- getLine
-  if raw == [] then commandCheck
+  if raw == [] then commandCheck connections
   else do
-    let (x:y:xs) = splitOn " " raw in
-      if (x == "R") 
+    let (command:portnumber:xs) = splitOn " " raw in
+      if (command == "R") 
         then do 
           showRoutingTable
-          commandCheck
-        else if (x == "B") 
+          commandCheck connections
+        else if (command == "B") 
           then do
-            --sendMessage (read y :: Int) (compileMessage xs)
-            commandCheck
-          else if (x == "C") 
+            sendMessage connections (read portnumber :: Int) (compileMessage xs)
+            commandCheck connections
+          else if (command == "C") 
             then do              
-              createHandle (read y :: Int)
-              commandCheck
-            else if (x == "D") 
+              createHandle (read portnumber :: Int) connections
+              commandCheck connections
+            else if (command == "D") 
               then do
-                commandCheck
+                commandCheck connections
               else do
                 putStrLn "Give valid input"
-                commandCheck
+                commandCheck connections
 
 -- Compiling the list of words into a single message
 compileMessage:: [String] -> String
@@ -144,15 +151,21 @@ showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
 -- Sending a message to a certain neighbour
-sendMessage:: Handle -> String -> IO()
-sendMessage handle message = hPutStrLn handle message
+sendMessage:: (IORef (HashMap Int Handle)) -> Int -> String -> IO()
+sendMessage connections portnumber message = do
+  _connections <- readIORef connections
+  if (member portnumber _connections) then do
+      let handle = (_connections ! portnumber)
+      hPutStrLn handle message
+  else 
+    putStrLn "ERROR: Portnumber is not known"
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
   args <- getArgs
   case args of
     [] -> error "Not enough arguments. You should pass the port number of the current process and a list of neighbours"
-    (me:neighbours) -> return (read me, map read neighbours)
+    (me:neighbours) -> return (read me, Prelude.map read neighbours)
 
 portToAddress :: Int -> SockAddr
 portToAddress portnumber = SockAddrInet (fromIntegral portnumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
