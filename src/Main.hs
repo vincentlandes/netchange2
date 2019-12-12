@@ -15,7 +15,9 @@ import Data.List.Split
 import Data.HashMap.Lazy as Hash
 import RoutingTable
 
-type HashTable = HashMap Int Handle
+type HandleTable = HashMap Int Handle
+type RoutingEntry = TVar (Int, Int)  
+type RoutingTable = HashMap Int RoutingEntry -- Portnummer waar ik naartoe wil (in hoeveel stappen, via welke port)
 
 main :: IO ()
 main = do  
@@ -37,12 +39,8 @@ main = do
   -- Let a seperate thread listen for incomming connections
   _ <- forkIO $ listenForConnections serverSocket
 
-  -- Create mvar for the mvar lock
-  mvarlock <- newEmptyMVar
-  putMVar mvarlock True
-
-  -- Create HashTable for connections and routingTable
-  connections <- newIORef empty
+  -- Create HandleTable for connections and routingTable
+  connections <- newTVarIO empty
   routingTable <- newIORef empty
 
   -- Start creating connections with every neighbour
@@ -51,26 +49,6 @@ main = do
   -- The main thread checks for commands
   commandCheck connections
 
-{--
-NIEUW STAPPENPLAN VOOR INITIELE CONNECTIES:  
-1. Maak een functie die gewoon checkt of WIJ of de BUREN de connectie moeten opstellen (if me > x then...)
-2. Als me > x, dan creeëren we de socket en daarna de handle.
-3. We roepen een functie aan met de handle als argument IN EEN NIEUWE THREAD. We forken dus deze functie.
-4.  (FUNCTIE A): Deze functie (die dus de handle heeft als argument en op een andere thread draait) handelt de connectie (modify handleConnection)
-
-STAPPENPLAN COMMAND C:
-1. Als we C binnenkrijgen, maak dan de socket en handle aan, en fork FUNCTIE A. (zie boven)
-
---VERSCHILLENDE THREADS PER NODE:
-1. Thread voor het luisteren naar inkomende connecties.
-2. Thread voor elke socket: deze socket checkt ZELF (in een loop) voor inkomende berichten.
-3. Main thread: luistert naar commands
-
-EXTRA NOTES:
-NIET in de main thread checkformessages doen.
-In de socket thread checkmessages doen.
-
---}
   -- As an example, connect to the first neighbour. This just
   -- serves as an example on using the network functions in Haskell
   -- case neighbours of
@@ -91,19 +69,20 @@ In de socket thread checkmessages doen.
   --     hClose chandle
 
 -- This function recursively goes over the neighbours list and
-initialConnections :: Int -> [Int] -> (IORef HashTable) -> IO()
+initialConnections :: Int -> [Int] -> (TVar HandleTable) -> IO()
 initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
 initialConnections myport (x:rest) connections = if myport > x then 
   createHandle x connections
 else initialConnections myport rest connections
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> (IORef HashTable) -> IO()
+createHandle :: Int -> (TVar HandleTable) -> IO()
 createHandle portnumber connections = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
-    _connections <- readIORef connections
-    writeIORef connections (insert portnumber chandle _connections)
+    atomically (do
+      _connections <- readTVar connections
+      writeTVar connections (insert portnumber chandle _connections)) 
     _ <- forkIO  $ initialBroadcast chandle
     putStrLn $ "//Connection made with: " ++ show portnumber
     
@@ -121,7 +100,7 @@ connectionHandler handle = do
   connectionHandler handle
 
 -- Loop check for incoming commands
-commandCheck :: (IORef HashTable) -> IO()
+commandCheck :: (TVar HandleTable) -> IO()
 commandCheck connections = do
   raw <- getLine
   if raw == [] then commandCheck connections
@@ -155,15 +134,21 @@ compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
+-- A function in the STM environment to get a certain handle if it's available in the HandleTable
+getHandle :: TVar (HandleTable) -> Int -> STM (Maybe Handle)
+getHandle connections portnumber = do
+  _connections <- readTVar connections
+  if (member portnumber _connections) then
+    return $ Just (_connections ! portnumber)
+  else return Nothing
+
 -- Sending a message to a certain neighbour
-sendMessage:: (IORef Table) -> Int -> String -> IO()
+sendMessage:: (TVar HandleTable) -> Int -> String -> IO()
 sendMessage connections portnumber message = do
-  _connections <- readIORef connections
-  if (member portnumber _connections) then do
-      let handle = (_connections ! portnumber)
-      hPutStrLn handle message
-  else 
-    putStrLn "ERROR: Portnumber is not known"
+  handle  <- atomically (getHandle connections portnumber)
+  case handle of
+    Just x -> hPutStrLn x message
+    Nothing -> putStrLn "ERROR: Portnumber is not known"
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
@@ -196,11 +181,3 @@ listenForConnections serverSocket = do
   forkIO $ initialBroadcast chandle
   putStrLn $ "Received connection with: " ++ show serverSocket
   listenForConnections serverSocket
-
---An MVar-lock to access the routing table
-lock :: IO a -> MVar(Bool) -> IO a
-lock myfunction mvar = do
-  dummy <- takeMVar mvar
-  result <- myfunction
-  putMVar mvar dummy
-  return result
