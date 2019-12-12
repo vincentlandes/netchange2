@@ -15,6 +15,8 @@ import Data.List.Split
 import Data.HashMap.Lazy as Hash
 import RoutingTable
 
+type Table = HashMap Int Handle
+
 main :: IO ()
 main = do  
   hSetBuffering stdout NoBuffering
@@ -89,14 +91,14 @@ In de socket thread checkmessages doen.
   --     hClose chandle
 
 -- This function recursively goes over the neighbours list and
-initialConnections :: Int -> [Int] -> (IORef (HashMap Int Handle)) -> IO()
+initialConnections :: Int -> [Int] -> (IORef Table) -> IO()
 initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
 initialConnections myport (x:rest) connections = if myport > x then 
   createHandle x connections
 else initialConnections myport rest connections
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> (IORef (HashMap Int Handle)) -> IO()
+createHandle :: Int -> (IORef Table) -> IO()
 createHandle portnumber connections = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
@@ -119,7 +121,7 @@ connectionHandler handle = do
   connectionHandler handle
 
 -- Loop check for incoming commands
-commandCheck :: (IORef (HashMap Int Handle)) -> IO()
+commandCheck :: (IORef Table) -> IO()
 commandCheck connections = do
   raw <- getLine
   if raw == [] then commandCheck connections
@@ -154,7 +156,7 @@ showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
 -- Sending a message to a certain neighbour
-sendMessage:: (IORef (HashMap Int Handle)) -> Int -> String -> IO()
+sendMessage:: (IORef Table) -> Int -> String -> IO()
 sendMessage connections portnumber message = do
   _connections <- readIORef connections
   if (member portnumber _connections) then do
