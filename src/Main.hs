@@ -15,7 +15,7 @@ import Data.List.Split
 import Data.HashMap.Lazy as Hash
 import RoutingTable
 
-type Table = HashMap Int Handle
+type HashTable = HashMap Int Handle
 
 main :: IO ()
 main = do  
@@ -91,14 +91,14 @@ In de socket thread checkmessages doen.
   --     hClose chandle
 
 -- This function recursively goes over the neighbours list and
-initialConnections :: Int -> [Int] -> (IORef Table) -> IO()
+initialConnections :: Int -> [Int] -> (IORef HashTable) -> IO()
 initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
 initialConnections myport (x:rest) connections = if myport > x then 
   createHandle x connections
 else initialConnections myport rest connections
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> (IORef Table) -> IO()
+createHandle :: Int -> (IORef HashTable) -> IO()
 createHandle portnumber connections = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
@@ -121,7 +121,7 @@ connectionHandler handle = do
   connectionHandler handle
 
 -- Loop check for incoming commands
-commandCheck :: (IORef Table) -> IO()
+commandCheck :: (IORef HashTable) -> IO()
 commandCheck connections = do
   raw <- getLine
   if raw == [] then commandCheck connections
