@@ -49,26 +49,7 @@ main = do
   -- The main thread checks for commands
   commandCheck connections
 
-  -- As an example, connect to the first neighbour. This just
-  -- serves as an example on using the network functions in Haskell
-  -- case neighbours of
-  --   [] -> putStrLn "I have no neighbours :("
-  --   neighbour : _ -> do
-  --     putStrLn $ "Connecting to neighbour " ++ show neighbour ++ "..."
-  --     client <- connectSocket neighbour --Maak een nieuwe Socket voor deze neighbour
-  --     chandle <- socketToHandle client ReadWriteMode --Creeër een handle voor deze socket
-  --     -- Send a message over the socket
-  --     -- You can send and receive messages with a similar API as reading and writing to the console.
-  --     -- Use `hPutStrLn chandle` instead of `putStrLn`,
-  --     -- and `hGetLine  chandle` instead of `getLine`.
-  --     -- You can close a connection with `hClose chandle`.
-  --     hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my first neighbour."
-  --     putStrLn "I sent a message to the neighbour"
-  --     message <- hGetLine chandle
-  --     putStrLn $ "Neighbour send a message back: " ++ show message
-  --     hClose chandle
-
--- This function recursively goes over the neighbours list and
+-- This function recursively goes over the neighbours list and checks if portnr greater or smaller.
 initialConnections :: Int -> [Int] -> (TVar HandleTable) -> IO()
 initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
 initialConnections myport (x:rest) connections = if myport > x then 
@@ -181,3 +162,21 @@ listenForConnections serverSocket = do
   forkIO $ initialBroadcast chandle
   putStrLn $ "Received connection with: " ++ show serverSocket
   listenForConnections serverSocket
+
+{-- --ROUTING TABLE BIJHOUDEN--
+1. Initializeren (dit doet elke node in het netwerk): 
+  a. Routing table entry: destination (est. distance, via welke buur)
+  b. Voor elke buur (w) die je hebt EN elke node in het netwerk (v): zet ndis[w,v] = N. v(N,w)
+  c. Stel een entry in voor jezelf (Du[u]=0) namelijk: 'eigenport (0,eigenport)'
+  d. Nbu[u] = local (preferred neighbour)
+  e. send mydis(eigenport,0) aan al je neighbours (in initial broadcast)
+2. daarna moeten we in handleConnection "mydis" connecties opvangen. (krijgen we van alle buren).
+  a. we krijgen een mydis bericht van onze buur (w): mydis(v,d)
+  b. pas de routingtable entry aan: v (d,w) (we kunnen v in d stappen berijken via buur w)
+  c. recompute routing table van deze node.
+3. tot slot de recompute functie.
+  a. geef de destination port wiens entry je wil aanpassen mee als argument.
+  b. als dit onze eigen port is, dan zet je eigenport(0,eigenport)
+  c. anders wordt de entry: destination(d,buur)
+
+--}
