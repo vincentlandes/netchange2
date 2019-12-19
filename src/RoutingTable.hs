@@ -12,23 +12,24 @@ import System.IO
 import Network.Socket
 import Data.List.Split
 import Data.HashMap.Lazy as Hash
+import Data.Hashable
 
-data Path = Local | Undef | Port Int
+--portnumber => -2 = undef, -1 = local, >0 = portnumber
 
-type RoutingEntry = TVar (Int, Path)            -- Distance & Prefered Neighbour
+type RoutingEntry = TVar (Int, Int)            -- Distance & Prefered Neighbour
 type RoutingTable = HashMap Int RoutingEntry    -- Destination & Entry
-type DistanceTable = HashMap Path Int           -- Node & Distance
-type PreferedTable = HashMap Path Path          -- Destination port & Prefered Neighbour
-type BuurDistanceTable = HashMap Int Path       -- Neigbour & Node
+type Table = HashMap Int Integer           -- Node & Distance
+          -- Destination port & Prefered Neighbour
+      -- Neigbour & Node
 
 data RoutingInfo = RoutingInfo {
     portnumber:: Int,
     allNodes:: [Int],
     neigbours:: [Int],
     routingTable:: RoutingTable,
-    distanceTable:: DistanceTable,
-    preferedTable:: PreferedTable, 
-    buurDistanceTable:: BuurDistanceTable
+    distanceTable:: Table,
+    preferedTable:: Table, 
+    buurDistanceTable:: Table
 }
 
 -- lijst van buren (gegeven)
@@ -43,26 +44,16 @@ init me neigbours =
         portnumber = me,
         allNodes = neigbours,
         neigbours = neigbours,
-        routingTable = initRoutingTable,
-        distanceTable = initDistanceTable,
-        preferedTable = initPreferedTable,
-        buurDistanceTable = initBuurDistanceTable
+        routingTable = empty,
+        distanceTable = initDistanceTable me,
+        preferedTable = initPreferedTable me,
+        buurDistanceTable = empty
     }
 
+initDistanceTable:: Int -> Table
+initDistanceTable me = insert me 0 distanceTable
+    where distanceTable = empty
 
-initRoutingTable:: RoutingTable
-initRoutingTable = empty
-
-initDistanceTable:: Int -> DistanceTable
-initDistanceTable me = do
-    distanceTable <- empty
-    insert (Port me) 0 distanceTable
-    return distanceTable
-
-initPreferedTable:: Int -> PreferedTable
-initPreferedTable me = do
-    preferedTable <- empty
-    insert (Port me) Local preferedTable
-
-initBuurDistanceTable:: BuurDistanceTable
-initBuurDistanceTable = empty
+initPreferedTable:: Int -> Table
+initPreferedTable me = insert me (-1) preferedTable
+    where preferedTable = empty

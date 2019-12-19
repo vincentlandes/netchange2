@@ -46,7 +46,7 @@ main = do
   -- 
 
   -- Start the initialisation of the routing information  
-  routingInfo <- computeRoutingInfo neighbours network
+  --routingInfo <- computeRoutingInfo neighbours network
   
   -- The main thread checks for commands
   commandCheck connections

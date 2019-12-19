@@ -42,4 +42,5 @@ executable netchange
     , network
     , split
     , unordered-containers
+    , hashable
 
