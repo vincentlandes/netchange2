@@ -13,7 +13,7 @@ import Network.Socket
 import Data.List.Split
 import Data.HashMap.Lazy as Hash
 
-data Path = Local | Undef | Int
+data Path = Local | Undef | Port Int
 
 type RoutingEntry = TVar (Int, Path)            -- Distance & Prefered Neighbour
 type RoutingTable = HashMap Int RoutingEntry    -- Destination & Entry
@@ -22,6 +22,7 @@ type PreferedTable = HashMap Path Path          -- Destination port & Prefered N
 type BuurDistanceTable = HashMap Int Path       -- Neigbour & Node
 
 data RoutingInfo = RoutingInfo {
+    portnumber:: Int,
     allNodes:: [Int],
     neigbours:: [Int],
     routingTable:: RoutingTable,
@@ -36,12 +37,12 @@ data RoutingInfo = RoutingInfo {
 -- lijst van voorkeurbuur voor elke node/bestemming
 -- lijst van de geschatte afstand van een van jou buren naar elke andere node
 
-init:: Int -> RoutingInfo
-init me = 
+init:: Int -> [Int] -> RoutingInfo
+init me neigbours = 
     RoutingInfo {
-        portnumber = me
-        allNodes = neigbours info,
-        neigbours = neigbours info,
+        portnumber = me,
+        allNodes = neigbours,
+        neigbours = neigbours,
         routingTable = initRoutingTable,
         distanceTable = initDistanceTable,
         preferedTable = initPreferedTable,
@@ -52,16 +53,16 @@ init me =
 initRoutingTable:: RoutingTable
 initRoutingTable = empty
 
-
 initDistanceTable:: Int -> DistanceTable
 initDistanceTable me = do
     distanceTable <- empty
-    insert me 0 distanceTable
+    insert (Port me) 0 distanceTable
+    return distanceTable
 
 initPreferedTable:: Int -> PreferedTable
 initPreferedTable me = do
     preferedTable <- empty
-    insert me (Path Local) preferedTable
+    insert (Port me) Local preferedTable
 
 initBuurDistanceTable:: BuurDistanceTable
 initBuurDistanceTable = empty
