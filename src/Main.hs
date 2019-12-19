@@ -64,7 +64,7 @@ createHandle me portnumber connections = do
     atomically (do
       _connections <- readTVar connections
       writeTVar connections (insert portnumber chandle _connections)) 
-    _ <- forkIO  $ initialBroadcast me chandle
+    initialBroadcast me chandle
     putStrLn $ "//Connection made with: " ++ show portnumber
     
 -- This function will let the new thread broadcast it's information to his neighbours
@@ -159,7 +159,7 @@ listenForConnections :: Int -> Socket -> IO ()
 listenForConnections me serverSocket = do
   (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
-  forkIO $ initialBroadcast me chandle
+  initialBroadcast me chandle
   putStrLn $ "Received connection with: " ++ show serverSocket
   listenForConnections me serverSocket
 
