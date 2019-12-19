@@ -16,8 +16,6 @@ import Data.HashMap.Lazy as Hash
 import RoutingTable
 
 type HandleTable = HashMap Int Handle
-type RoutingEntry = TVar (Int, Int)  
-type RoutingTable = HashMap Int RoutingEntry -- Portnummer waar ik naartoe wil (in hoeveel stappen, via welke port)
 
 main :: IO ()
 main = do  
@@ -41,10 +39,14 @@ main = do
 
   -- Create HandleTable for connections and routingTable
   connections <- newTVarIO empty
-  routingTable <- newIORef empty
 
   -- Start creating connections with every neighbour
   initialConnections me neighbours connections
+
+  -- 
+
+  -- Start the initialisation of the routing information  
+  routingInfo <- computeRoutingInfo neighbours network
   
   -- The main thread checks for commands
   commandCheck connections
@@ -70,7 +72,6 @@ createHandle portnumber connections = do
 -- This function will let the new thread broadcast it's information to his neighbours
 initialBroadcast :: Handle -> IO()
 initialBroadcast handle = do
-  --broadcast all je info hier
   connectionHandler handle
 
 -- This handles a single connection
