@@ -13,7 +13,7 @@ import System.IO
 import Network.Socket
 import Data.List.Split
 import Data.HashMap.Lazy as Hash
-import RoutingTable
+import RoutingTable as RT
 
 type HandleTable = HashMap Int Handle
 
@@ -35,7 +35,7 @@ main = do
   listen serverSocket 1024
   
   -- Let a seperate thread listen for incomming connections
-  _ <- forkIO $ listenForConnections serverSocket
+  _ <- forkIO $ listenForConnections me serverSocket
 
   -- Create HandleTable for connections and routingTable
   connections <- newTVarIO empty
@@ -43,36 +43,35 @@ main = do
   -- Start creating connections with every neighbour
   initialConnections me neighbours connections
 
-  -- 
-
   -- Start the initialisation of the routing information  
-  --routingInfo <- computeRoutingInfo neighbours network
+  let routingInfo = RT.init me neighbours
   
   -- The main thread checks for commands
-  commandCheck connections
+  commandCheck me connections
 
 -- This function recursively goes over the neighbours list and checks if portnr greater or smaller.
 initialConnections :: Int -> [Int] -> (TVar HandleTable) -> IO()
 initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
-initialConnections myport (x:rest) connections = if myport > x then 
-  createHandle x connections
-else initialConnections myport rest connections
+initialConnections me (x:rest) connections = if me > x then 
+  createHandle me x connections
+else initialConnections me rest connections
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> (TVar HandleTable) -> IO()
-createHandle portnumber connections = do
+createHandle :: Int -> Int -> (TVar HandleTable) -> IO()
+createHandle me portnumber connections = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
     atomically (do
       _connections <- readTVar connections
       writeTVar connections (insert portnumber chandle _connections)) 
-    _ <- forkIO  $ initialBroadcast chandle
+    _ <- forkIO  $ initialBroadcast me chandle
     putStrLn $ "//Connection made with: " ++ show portnumber
     
 -- This function will let the new thread broadcast it's information to his neighbours
-initialBroadcast :: Handle -> IO()
-initialBroadcast handle = do
-  connectionHandler handle
+initialBroadcast :: Int -> Handle -> IO()
+initialBroadcast me handle = do
+  hPutStrLn handle ("mydist " ++ (show me) ++ " 0")
+  connectionHandler handle  
 
 -- This handles a single connection
 connectionHandler :: Handle -> IO() 
@@ -82,30 +81,30 @@ connectionHandler handle = do
   connectionHandler handle
 
 -- Loop check for incoming commands
-commandCheck :: (TVar HandleTable) -> IO()
-commandCheck connections = do
+commandCheck :: Int -> (TVar HandleTable) -> IO()
+commandCheck me connections = do
   raw <- getLine
-  if raw == [] then commandCheck connections
+  if raw == [] then commandCheck me connections
   else do
     let (command:portnumber:xs) = splitOn " " raw in
       if (command == "R") 
         then do 
           showRoutingTable
-          commandCheck connections
+          commandCheck me connections
         else if (command == "B") 
           then do
             sendMessage connections (read portnumber :: Int) (compileMessage xs)
-            commandCheck connections
+            commandCheck me connections
           else if (command == "C") 
             then do              
-              createHandle (read portnumber :: Int) connections
-              commandCheck connections
+              createHandle me (read portnumber :: Int) connections
+              commandCheck me connections
             else if (command == "D") 
               then do
-                commandCheck connections
+                commandCheck me connections
               else do
                 putStrLn "Give valid input"
-                commandCheck connections
+                commandCheck me connections
 
 -- Compiling the list of words into a single message
 compileMessage:: [String] -> String
@@ -156,13 +155,13 @@ connectSocket portnumber = connect'
         Right _ -> return client
 
 --A fuction which listens for incoming connections (loops)
-listenForConnections :: Socket -> IO ()
-listenForConnections serverSocket = do
+listenForConnections :: Int -> Socket -> IO ()
+listenForConnections me serverSocket = do
   (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
-  forkIO $ initialBroadcast chandle
+  forkIO $ initialBroadcast me chandle
   putStrLn $ "Received connection with: " ++ show serverSocket
-  listenForConnections serverSocket
+  listenForConnections me serverSocket
 
 {-- --ROUTING TABLE BIJHOUDEN--
 1. Initializeren (dit doet elke node in het netwerk): 
