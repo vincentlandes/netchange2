@@ -41,7 +41,7 @@ main = do
   routingInfo <- newTVarIO (RT.init me neighbours)
   
   -- Let a seperate thread listen for incomming connections
-  _ <- forkIO $ listenForConnections me serverSocket routingInfo
+  _ <- forkIO $ listenForConnections me serverSocket connections routingInfo
 
   -- Start creating connections with every neighbour
   initialConnections me neighbours connections routingInfo
@@ -69,9 +69,10 @@ createHandle me portnumber connections routingInfo = do
     
 -- This function will let the new thread broadcast it's information to his neighbours
 initialize :: Int -> Handle -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
-initialize me handle routingInfo connections = do
+initialize me handle connections routingInfo = do
   hPutStrLn handle ("mydist " ++ (show me) ++ " 0")
-  connectionHandler me handle routingInfo connections
+  _ <- forkIO $ connectionHandler me handle connections routingInfo
+  putStrLn ""
 
 -- This handles a single connection
 connectionHandler :: Int -> Handle -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO() 
@@ -82,17 +83,20 @@ connectionHandler me handle connections routingInfo = do
     let (command:portnumber:xs) = splitOn " " input in
       if (command == "mydist")
         then do
+          -- change routing table
           putStrLn $ compileMessage xs
+          connectionHandler me handle connections routingInfo
       else if (command == "B")
         then do
           if (portnumber == (show me)) then do
             putStrLn $ compileMessage xs
+            connectionHandler me handle connections routingInfo
           else do
-            let destination = portnumber
+            let destination = read portnumber :: Int
             let neighbour = destination -- getNeighbour
-            putStrLn "Message for " ++ (show destination) ++ " is relayed to " ++ (show neighbour)
+            putStrLn ("Message for " ++ (show destination) ++ " is relayed to " ++ (show neighbour))
             sendMessage connections neighbour destination (compileMessage xs)
-            putStrLn $ compileMessage xs
+            connectionHandler me handle connections routingInfo
       else do
         putStrLn "//Unexpected input"
         connectionHandler me handle connections routingInfo
@@ -121,10 +125,10 @@ commandCheck me connections routingInfo = do
               commandCheck me connections routingInfo
             else if (command == "D") 
               then do
-                disconnect portnumber connections
+                disconnect connections (read portnumber :: Int)
                 commandCheck me connections routingInfo
               else do
-                putStrLn "Give valid input"
+                putStrLn "//Give valid input"
                 commandCheck me connections routingInfo
 
 -- Compiling the list of words into a single message
@@ -139,10 +143,11 @@ showRoutingTable = putStrLn "Showing routing table"
 -- Disconnect from a given port
 disconnect:: (TVar HandleTable) -> Int -> IO ()
 disconnect connections portnumber = do
-  _connections <- readTVar connections
-  if (member portnumber _connections) then
-    delete portnumber _connections
-    putStrLn "Disconnect: " ++ (show portnumber)
+  _connections <- atomically $ readTVar connections
+  if (member portnumber _connections) 
+    then do
+      _ <- atomically $ writeTVar connections (delete portnumber _connections)
+      putStrLn ("Disconnect: " ++ (show portnumber))
   else putStrLn "//Given portnumber is not connected to you"
 
 -- A function in the STM environment to get a certain handle if it's available in the HandleTable
@@ -159,13 +164,13 @@ sendMessage connections portnumber destination message = do
   handle  <- atomically (getHandle connections portnumber)
   case handle of
     Just handle -> hPutStrLn handle ("B " ++ (show destination) ++ " " ++ message)
-    Nothing -> putStrLn "Port " ++ (show portnumber) ++ " is not known"
+    Nothing -> putStrLn ("Port " ++ (show portnumber) ++ " is not known")
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
   args <- getArgs
   case args of
-    [] -> error "Not enough arguments. You should pass the port number of the current process and a list of neighbours"
+    [] -> error "//Not enough arguments. You should pass the port number of the current process and a list of neighbours"
     (me:neighbours) -> return (read me, Prelude.map read neighbours)
 
 portToAddress :: Int -> SockAddr
@@ -185,13 +190,16 @@ connectSocket portnumber = connect'
         Right _ -> return client
 
 --A fuction which listens for incoming connections (loops)
-listenForConnections :: Int -> Socket -> (TVar RoutingInfo) -> IO ()
-listenForConnections me serverSocket routingInfo = do
+listenForConnections :: Int -> Socket -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO ()
+listenForConnections me serverSocket connections routingInfo = do
   (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
-  initialize me chandle routingInfo
-  putStrLn $ "Received connection with: " ++ show serverSocket
-  listenForConnections me serverSocket routingInfo
+  -- atomically (do
+  --     _connections <- readTVar connections
+  --     writeTVar connections (insert portnumber chandle _connections)) 
+  initialize me chandle connections routingInfo
+  putStrLn $ "//Received connection with: " ++ show serverSocket
+  listenForConnections me serverSocket connections routingInfo
 
 {-- --ROUTING TABLE BIJHOUDEN--
 1. Initializeren (dit doet elke node in het netwerk): 
