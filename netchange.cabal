@@ -26,6 +26,7 @@ executable netchange
 
   other-modules:
       Paths_netchange
+    , RoutingTable
 
   ghc-options:
       -Wall
@@ -40,4 +41,6 @@ executable netchange
     , stm
     , network
     , split
+    , unordered-containers
+    , hashable
 

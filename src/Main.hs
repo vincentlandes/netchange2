@@ -4,6 +4,7 @@ module Main where
 import Control.Monad
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.Concurrent.STM.TVar
 import Control.Concurrent.MVar
 import Control.Exception
 import Data.IORef
@@ -11,6 +12,10 @@ import System.Environment
 import System.IO
 import Network.Socket
 import Data.List.Split
+import Data.HashMap.Lazy as Hash
+import RoutingTable as RT
+
+type HandleTable = HashMap Int Handle
 
 main :: IO ()
 main = do  
@@ -30,123 +35,113 @@ main = do
   listen serverSocket 1024
   
   -- Let a seperate thread listen for incomming connections
-  _ <- forkIO $ listenForConnections serverSocket
+  _ <- forkIO $ listenForConnections me serverSocket
 
-  -- As an example, connect to the first neighbour. This just
-  -- serves as an example on using the network functions in Haskell
-  -- case neighbours of
-  --   [] -> putStrLn "I have no neighbours :("
-  --   neighbour : _ -> do
-  --     putStrLn $ "Connecting to neighbour " ++ show neighbour ++ "..."
-  --     client <- connectSocket neighbour --Maak een nieuwe Socket voor deze neighbour
-  --     chandle <- socketToHandle client ReadWriteMode --Creeër een handle voor deze socket
-  --     -- Send a message over the socket
-  --     -- You can send and receive messages with a similar API as reading and writing to the console.
-  --     -- Use `hPutStrLn chandle` instead of `putStrLn`,
-  --     -- and `hGetLine  chandle` instead of `getLine`.
-  --     -- You can close a connection with `hClose chandle`.
-  --     hPutStrLn chandle $ "Hi process " ++ show neighbour ++ "! I'm process " ++ show me ++ " and you are my first neighbour."
-  --     putStrLn "I sent a message to the neighbour"
-  --     message <- hGetLine chandle
-  --     putStrLn $ "Neighbour send a message back: " ++ show message
-  --     hClose chandle
+  -- Create HandleTable for connections and routingTable
+  connections <- newTVarIO empty
 
-  -- Create mvar for the mvar lock
-  mvarlock <- newEmptyMVar
-  putMVar mvarlock True
+  -- Start creating connections with every neighbour
+  initialConnections me neighbours connections
 
-  -- Make threads for commands
-  _ <- forkIO $ commandCheck
-  threadDelay 5000000
+  -- Start the initialisation of the routing information  
+  let routingInfo = RT.init me neighbours
+  
+  -- The main thread checks for commands
+  commandCheck me connections
 
-  -- Check for incomming messages
-  checkForMessages neighbours
+-- This function recursively goes over the neighbours list and checks if portnr greater or smaller.
+initialConnections :: Int -> [Int] -> (TVar HandleTable) -> IO()
+initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
+initialConnections me (x:rest) connections = if me > x then 
+  createHandle me x connections
+else initialConnections me rest connections
 
-checkForMessages:: [Int] -> IO()
-checkForMessages neighbours = case neighbours of
-  [] -> checkForMessages neighbours
-  neighbours -> do 
-    checkForMessage neighbours
-    threadDelay 10000000
-    checkForMessages neighbours
+-- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
+createHandle :: Int -> Int -> (TVar HandleTable) -> IO()
+createHandle me portnumber connections = do
+    client <- connectSocket portnumber
+    chandle <- socketToHandle client ReadWriteMode
+    atomically (do
+      _connections <- readTVar connections
+      writeTVar connections (insert portnumber chandle _connections)) 
+    initialBroadcast me chandle
+    putStrLn $ "//Connection made with: " ++ show portnumber
+    
+-- This function will let the new thread broadcast it's information to his neighbours
+initialBroadcast :: Int -> Handle -> IO()
+initialBroadcast me handle = do
+  hPutStrLn handle ("mydist " ++ (show me) ++ " 0")
+  connectionHandler handle  
 
---Loop check for incomming messages
-checkForMessage:: [Int] -> IO()
-checkForMessage [] = putStrLn "I have no neighbours"
-checkForMessage (neighbour:neighbours) = do
-  client <- connectSocket neighbour
-  chandle <- socketToHandle client ReadWriteMode
-  message <- hGetLine chandle
-  if (message /= []) then
-    putStrLn $ "Incomming message: " ++ show message
-  else putStrLn "No incomming message"
-  hClose chandle
-  checkForMessage neighbours
+-- This handles a single connection
+connectionHandler :: Handle -> IO() 
+connectionHandler handle = do
+  input <- hGetLine handle
+  putStrLn $ show input
+  connectionHandler handle
 
---Loop check for incoming commands
-commandCheck :: IO()
-commandCheck = do
+-- Loop check for incoming commands
+commandCheck :: Int -> (TVar HandleTable) -> IO()
+commandCheck me connections = do
   raw <- getLine
-  if raw == [] then commandCheck
+  if raw == [] then commandCheck me connections
   else do
-    let (x:y:xs) = splitOn " " raw in
-      if (x == "R") 
+    let (command:portnumber:xs) = splitOn " " raw in
+      if (command == "R") 
         then do 
           showRoutingTable
-          commandCheck
-        else if (x == "B") 
+          commandCheck me connections
+        else if (command == "B") 
           then do
-            sendMessage (read y :: Int) (compileMessage xs)
-            commandCheck
-          else if (x == "C") 
-            then do 
-              makeConnection (y)
-              commandCheck
-            else if (x == "D") 
-              then do 
-                closeConnection (y)
-                commandCheck
-              else if (x == "Q")
-                then do
-                  closeNode
-                else do
-                  putStrLn "Give valid input"
-                  commandCheck
+            sendMessage connections (read portnumber :: Int) (compileMessage xs)
+            commandCheck me connections
+          else if (command == "C") 
+            then do              
+              createHandle me (read portnumber :: Int) connections
+              commandCheck me connections
+            else if (command == "D") 
+              then do
+                commandCheck me connections
+              else do
+                putStrLn "Give valid input"
+                commandCheck me connections
 
+-- Compiling the list of words into a single message
 compileMessage:: [String] -> String
 compileMessage [] = ""
 compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 
+-- Printing the routing table to the console
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
 
-sendMessage:: Int -> String -> IO()
-sendMessage portnumber message = do 
-  putStrLn ("Message for: " ++ show portnumber ++ " is relayed to ")
-  putStrLn ("The message is: " ++ message)
-  client <- connectSocket portnumber 
-  chandle <- socketToHandle client ReadWriteMode
-  hPutStrLn chandle message
+-- A function in the STM environment to get a certain handle if it's available in the HandleTable
+getHandle :: TVar (HandleTable) -> Int -> STM (Maybe Handle)
+getHandle connections portnumber = do
+  _connections <- readTVar connections
+  if (member portnumber _connections) then
+    return $ Just (_connections ! portnumber)
+  else return Nothing
 
-makeConnection:: String -> IO()
-makeConnection portnumber = putStrLn ("Connected: " ++ portnumber)
-
-closeConnection:: String -> IO()
-closeConnection portnumber = putStrLn ("Disconnected: " ++ portnumber)
-
-closeNode:: IO()
-closeNode = putStrLn ("Closing Node")
+-- Sending a message to a certain neighbour
+sendMessage:: (TVar HandleTable) -> Int -> String -> IO()
+sendMessage connections portnumber message = do
+  handle  <- atomically (getHandle connections portnumber)
+  case handle of
+    Just x -> hPutStrLn x message
+    Nothing -> putStrLn "ERROR: Portnumber is not known"
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
   args <- getArgs
   case args of
     [] -> error "Not enough arguments. You should pass the port number of the current process and a list of neighbours"
-    (me:neighbours) -> return (read me, map read neighbours)
+    (me:neighbours) -> return (read me, Prelude.map read neighbours)
 
 portToAddress :: Int -> SockAddr
 portToAddress portnumber = SockAddrInet (fromIntegral portnumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
 
+--Maak een socket voor het gegeven portnummer.
 connectSocket :: Int -> IO Socket
 connectSocket portnumber = connect'
   where
@@ -159,26 +154,29 @@ connectSocket portnumber = connect'
           connect'
         Right _ -> return client
 
-listenForConnections :: Socket -> IO ()
-listenForConnections serverSocket = do
-  (connection, _) <- accept serverSocket
-  _ <- forkIO $ handleConnection connection
-  listenForConnections serverSocket
-
-handleConnection :: Socket -> IO ()
-handleConnection connection = do
-  putStrLn "Got new incomming connection"
+--A fuction which listens for incoming connections (loops)
+listenForConnections :: Int -> Socket -> IO ()
+listenForConnections me serverSocket = do
+  (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
-  hPutStrLn chandle "Welcome"
-  message <- hGetLine chandle
-  putStrLn $ "Incomming connection send a message: " ++ message
-  hClose chandle
+  initialBroadcast me chandle
+  putStrLn $ "Received connection with: " ++ show serverSocket
+  listenForConnections me serverSocket
 
---An MVar-lock to access the routing table
+{-- --ROUTING TABLE BIJHOUDEN--
+1. Initializeren (dit doet elke node in het netwerk): 
+  a. Routing table entry: destination (est. distance, via welke buur)
+  b. Voor elke buur (w) die je hebt EN elke node in het netwerk (v): zet ndis[w,v] = N. v(N,w)
+  c. Stel een entry in voor jezelf (Du[u]=0) namelijk: 'eigenport (0,eigenport)'
+  d. Nbu[u] = local (preferred neighbour)
+  e. send mydis(eigenport,0) aan al je neighbours (in initial broadcast)
+2. daarna moeten we in handleConnection "mydis" connecties opvangen. (krijgen we van alle buren).
+  a. we krijgen een mydis bericht van onze buur (w): mydis(v,d)
+  b. pas de routingtable entry aan: v (d,w) (we kunnen v in d stappen berijken via buur w)
+  c. recompute routing table van deze node.
+3. tot slot de recompute functie.
+  a. geef de destination port wiens entry je wil aanpassen mee als argument.
+  b. als dit onze eigen port is, dan zet je eigenport(0,eigenport)
+  c. anders wordt de entry: destination(d,buur)
 
-lock :: IO a -> MVar(Bool) -> IO a
-lock myfunction mvar = do
-  dummy <- takeMVar mvar
-  result <- myfunction
-  putMVar mvar dummy
-  return result
+--}
