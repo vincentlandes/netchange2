@@ -17,10 +17,8 @@ import Data.Hashable
 --portnumber => -2 = undef, -1 = local, >0 = portnumber
 
 type RoutingEntry = TVar (Int, Int)            -- Distance & Prefered Neighbour
-type RoutingTable = HashMap Int RoutingEntry    -- Destination & Entry
-type Table = HashMap Int Integer           -- Node & Distance
-          -- Destination port & Prefered Neighbour
-      -- Neigbour & Node
+type RoutingTable = HashMap Int RoutingEntry   -- Destination & Entry
+type Table = HashMap Int Integer               -- Node & Distance
 
 data RoutingInfo = RoutingInfo {
     portnumber:: Int,
@@ -57,3 +55,6 @@ initDistanceTable me = insert me 0 distanceTable
 initPreferedTable:: Int -> Table
 initPreferedTable me = insert me (-1) preferedTable
     where preferedTable = empty
+
+getNeigbour:: (TVar RoutingInfo) -> Int -> Int
+getNeigbour routingTable destination = 0

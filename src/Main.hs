@@ -34,77 +34,94 @@ main = do
   bind serverSocket $ portToAddress me
   listen serverSocket 1024
   
-  -- Let a seperate thread listen for incomming connections
-  _ <- forkIO $ listenForConnections me serverSocket
-
   -- Create HandleTable for connections and routingTable
   connections <- newTVarIO empty
 
-  -- Start creating connections with every neighbour
-  initialConnections me neighbours connections
+  -- Start the initialisation of the routing information
+  routingInfo <- newTVarIO (RT.init me neighbours)
+  
+  -- Let a seperate thread listen for incomming connections
+  _ <- forkIO $ listenForConnections me serverSocket routingInfo
 
-  -- Start the initialisation of the routing information  
-  let routingInfo = RT.init me neighbours
+  -- Start creating connections with every neighbour
+  initialConnections me neighbours connections routingInfo
   
   -- The main thread checks for commands
-  commandCheck me connections
+  commandCheck me connections routingInfo
 
 -- This function recursively goes over the neighbours list and checks if portnr greater or smaller.
-initialConnections :: Int -> [Int] -> (TVar HandleTable) -> IO()
-initialConnections _ [] _ = putStrLn "//I have no more neighbours to connect with" 
-initialConnections me (x:rest) connections = if me > x then 
-  createHandle me x connections
-else initialConnections me rest connections
+initialConnections :: Int -> [Int] -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
+initialConnections _ [] _ _ = putStrLn "//I have no more neighbours to connect with" 
+initialConnections me (x:rest) connections routingInfo = if me > x then 
+  createHandle me x connections routingInfo
+else initialConnections me rest connections routingInfo
 
 -- This function first creates a handle for a given portnumber, and then starts a new thread with that handle to handle that connection.
-createHandle :: Int -> Int -> (TVar HandleTable) -> IO()
-createHandle me portnumber connections = do
+createHandle :: Int -> Int -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
+createHandle me portnumber connections routingInfo = do
     client <- connectSocket portnumber
     chandle <- socketToHandle client ReadWriteMode
     atomically (do
       _connections <- readTVar connections
       writeTVar connections (insert portnumber chandle _connections)) 
-    initialBroadcast me chandle
+    initialize me chandle routingInfo
     putStrLn $ "//Connection made with: " ++ show portnumber
     
 -- This function will let the new thread broadcast it's information to his neighbours
-initialBroadcast :: Int -> Handle -> IO()
-initialBroadcast me handle = do
+initialize :: Int -> Handle -> (TVar RoutingInfo) -> IO()
+initialize me handle routingInfo = do
   hPutStrLn handle ("mydist " ++ (show me) ++ " 0")
-  connectionHandler handle  
+  connectionHandler me handle routingInfo
 
 -- This handles a single connection
-connectionHandler :: Handle -> IO() 
-connectionHandler handle = do
+connectionHandler :: Int -> Handle -> (TVar RoutingInfo) -> IO() 
+connectionHandler me handle routingInfo = do
   input <- hGetLine handle
-  putStrLn $ show input
-  connectionHandler handle
+  if (input == []) then connectionHandler me handle routingInfo
+  else do 
+    let (command:portnumber:xs) = splitOn " " input in
+      if (command == "mydist")
+        then do
+          putStrLn $ compileMessage xs
+      else if (command == "B")
+        then do
+          putStrLn $ compileMessage xs
+          if (portnumber == (show me)) then do
+            putStrLn $ compileMessage xs
+          else do
+            putStrLn $ compileMessage xs
+      else do
+        putStrLn "//Unexpected input"
+        connectionHandler me handle routingInfo
+  connectionHandler me handle routingInfo
 
 -- Loop check for incoming commands
-commandCheck :: Int -> (TVar HandleTable) -> IO()
-commandCheck me connections = do
+commandCheck :: Int -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
+commandCheck me connections routingInfo = do
   raw <- getLine
-  if raw == [] then commandCheck me connections
+  if raw == [] then commandCheck me connections routingInfo
   else do
     let (command:portnumber:xs) = splitOn " " raw in
       if (command == "R") 
         then do 
           showRoutingTable
-          commandCheck me connections
+          commandCheck me connections routingInfo
         else if (command == "B") 
           then do
-            sendMessage connections (read portnumber :: Int) (compileMessage xs)
-            commandCheck me connections
+            let destination = (read portnumber :: Int)
+            let neighbour = RT.getNeigbour routingInfo destination
+            sendMessage connections neighbour destination (compileMessage xs)
+            commandCheck me connections routingInfo
           else if (command == "C") 
             then do              
-              createHandle me (read portnumber :: Int) connections
-              commandCheck me connections
+              createHandle me (read portnumber :: Int) connections routingInfo
+              commandCheck me connections routingInfo
             else if (command == "D") 
               then do
-                commandCheck me connections
+                commandCheck me connections routingInfo
               else do
                 putStrLn "Give valid input"
-                commandCheck me connections
+                commandCheck me connections routingInfo
 
 -- Compiling the list of words into a single message
 compileMessage:: [String] -> String
@@ -124,11 +141,11 @@ getHandle connections portnumber = do
   else return Nothing
 
 -- Sending a message to a certain neighbour
-sendMessage:: (TVar HandleTable) -> Int -> String -> IO()
-sendMessage connections portnumber message = do
+sendMessage:: (TVar HandleTable) -> Int -> Int -> String -> IO()
+sendMessage connections portnumber destination message = do
   handle  <- atomically (getHandle connections portnumber)
   case handle of
-    Just x -> hPutStrLn x message
+    Just handle -> hPutStrLn handle ("B " ++ (show destination) ++ " " ++ message)
     Nothing -> putStrLn "ERROR: Portnumber is not known"
 
 readCommandLineArguments :: IO (Int, [Int])
@@ -155,13 +172,13 @@ connectSocket portnumber = connect'
         Right _ -> return client
 
 --A fuction which listens for incoming connections (loops)
-listenForConnections :: Int -> Socket -> IO ()
-listenForConnections me serverSocket = do
+listenForConnections :: Int -> Socket -> (TVar RoutingInfo) -> IO ()
+listenForConnections me serverSocket routingInfo = do
   (connection, _ ) <- accept serverSocket
   chandle <- socketToHandle connection ReadWriteMode
-  initialBroadcast me chandle
+  initialize me chandle routingInfo
   putStrLn $ "Received connection with: " ++ show serverSocket
-  listenForConnections me serverSocket
+  listenForConnections me serverSocket routingInfo
 
 {-- --ROUTING TABLE BIJHOUDEN--
 1. Initializeren (dit doet elke node in het netwerk): 
