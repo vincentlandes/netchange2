@@ -64,20 +64,20 @@ createHandle me portnumber connections routingInfo = do
     atomically (do
       _connections <- readTVar connections
       writeTVar connections (insert portnumber chandle _connections)) 
-    initialize me chandle routingInfo
-    putStrLn $ "//Connection made with: " ++ show portnumber
+    _ <- forkIO $ initialize me chandle connections routingInfo
+    putStrLn $ "Connected: " ++ show portnumber
     
 -- This function will let the new thread broadcast it's information to his neighbours
-initialize :: Int -> Handle -> (TVar RoutingInfo) -> IO()
-initialize me handle routingInfo = do
+initialize :: Int -> Handle -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
+initialize me handle routingInfo connections = do
   hPutStrLn handle ("mydist " ++ (show me) ++ " 0")
-  connectionHandler me handle routingInfo
+  connectionHandler me handle routingInfo connections
 
 -- This handles a single connection
-connectionHandler :: Int -> Handle -> (TVar RoutingInfo) -> IO() 
-connectionHandler me handle routingInfo = do
+connectionHandler :: Int -> Handle -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO() 
+connectionHandler me handle connections routingInfo = do
   input <- hGetLine handle
-  if (input == []) then connectionHandler me handle routingInfo
+  if (input == []) then connectionHandler me handle connections routingInfo
   else do 
     let (command:portnumber:xs) = splitOn " " input in
       if (command == "mydist")
@@ -85,15 +85,18 @@ connectionHandler me handle routingInfo = do
           putStrLn $ compileMessage xs
       else if (command == "B")
         then do
-          putStrLn $ compileMessage xs
           if (portnumber == (show me)) then do
             putStrLn $ compileMessage xs
           else do
+            let destination = portnumber
+            let neighbour = destination -- getNeighbour
+            putStrLn "Message for " ++ (show destination) ++ " is relayed to " ++ (show neighbour)
+            sendMessage connections neighbour destination (compileMessage xs)
             putStrLn $ compileMessage xs
       else do
         putStrLn "//Unexpected input"
-        connectionHandler me handle routingInfo
-  connectionHandler me handle routingInfo
+        connectionHandler me handle connections routingInfo
+  connectionHandler me handle connections routingInfo
 
 -- Loop check for incoming commands
 commandCheck :: Int -> (TVar HandleTable) -> (TVar RoutingInfo) -> IO()
@@ -109,7 +112,7 @@ commandCheck me connections routingInfo = do
         else if (command == "B") 
           then do
             let destination = (read portnumber :: Int)
-            let neighbour = RT.getNeigbour routingInfo destination
+            let neighbour = destination
             sendMessage connections neighbour destination (compileMessage xs)
             commandCheck me connections routingInfo
           else if (command == "C") 
@@ -118,6 +121,7 @@ commandCheck me connections routingInfo = do
               commandCheck me connections routingInfo
             else if (command == "D") 
               then do
+                disconnect portnumber connections
                 commandCheck me connections routingInfo
               else do
                 putStrLn "Give valid input"
@@ -131,6 +135,15 @@ compileMessage (x:xs) = x ++ " " ++ compileMessage xs
 -- Printing the routing table to the console
 showRoutingTable:: IO()
 showRoutingTable = putStrLn "Showing routing table"
+
+-- Disconnect from a given port
+disconnect:: (TVar HandleTable) -> Int -> IO ()
+disconnect connections portnumber = do
+  _connections <- readTVar connections
+  if (member portnumber _connections) then
+    delete portnumber _connections
+    putStrLn "Disconnect: " ++ (show portnumber)
+  else putStrLn "//Given portnumber is not connected to you"
 
 -- A function in the STM environment to get a certain handle if it's available in the HandleTable
 getHandle :: TVar (HandleTable) -> Int -> STM (Maybe Handle)
@@ -146,7 +159,7 @@ sendMessage connections portnumber destination message = do
   handle  <- atomically (getHandle connections portnumber)
   case handle of
     Just handle -> hPutStrLn handle ("B " ++ (show destination) ++ " " ++ message)
-    Nothing -> putStrLn "ERROR: Portnumber is not known"
+    Nothing -> putStrLn "Port " ++ (show portnumber) ++ " is not known"
 
 readCommandLineArguments :: IO (Int, [Int])
 readCommandLineArguments = do
@@ -158,7 +171,7 @@ readCommandLineArguments = do
 portToAddress :: Int -> SockAddr
 portToAddress portnumber = SockAddrInet (fromIntegral portnumber) (tupleToHostAddress (127, 0, 0, 1)) -- localhost
 
---Maak een socket voor het gegeven portnummer.
+--Make a socket given a portnumber
 connectSocket :: Int -> IO Socket
 connectSocket portnumber = connect'
   where
